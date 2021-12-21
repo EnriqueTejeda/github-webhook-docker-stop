@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -62,15 +61,16 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func handlePullRequestClosedEvent(GithubEvent *github.PullRequestEvent) {
+func handlePullRequestClosedEvent(GithubEvent *github.PullRequestEvent) (error) {
 	labels := filters.NewArgs(
-		filters.KeyValuePair{"projectName", replaceDotAndUppercase(GithubEvent.GetRepo().GetName())},
-		filters.KeyValuePair{"pullRequestNumber", strconv.Itoa(GithubEvent.GetPullRequest().GetNumber())}
+		filters.KeyValuePair{"projectName", replaceDotAndLowercase(GithubEvent.GetRepo().GetName())},
+		filters.KeyValuePair{"pullRequestNumber", strconv.Itoa(GithubEvent.GetPullRequest().GetNumber())},
 	)
-	err := stopContainer(labels)
-	if _, err != nil {
+	_, err := stopContainer(labels)
+	if err != nil {
 		return err
 	}
+	return nil
 }
 
 func replaceDotAndLowercase(repoName string) string {
@@ -78,46 +78,41 @@ func replaceDotAndLowercase(repoName string) string {
 }
 
 func createPullRequestComment(GithubEvent *github.PullRequestEvent) (error) {
-	comment := "The container linked to this pull request has been stopped (%v)", GithubEvent.GetPullRequest().GetHTMLURL() + "."
-	if err := cli.Activity.CreateComment(ctx, GithubEvent.GetRepo().GetOwner().GetLogin(), GithubEvent.GetRepo().GetName(), GithubEvent.GetNumber(), &github.IssueComment{Body: &comment}); 
-	err != nil {
-		log.Error("error creating comment: err=%s\n", err)
-		return err
-	}
+	// comment := "The container linked to this pull request has been stopped (" + GithubEvent.GetPullRequest().GetHTMLURL() + ")."
 	return nil
 }
 
-func findContainerByLabel(labels filters.Args) ([]types.Container, error) ) { 
+func findContainerByLabel(labels filters.Args) ([]types.Container, error) { 
 	ctx := context.Background()
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation(), client.WithHost("unix:///tmp/docker.sock"))
 	if err != nil {
-		return _, err
+		return nil, err
 	}
-	containers, err := cli.ContainerList(ctx, types.ContainerListOptions{Filters: args})
+	containers, err := cli.ContainerList(ctx, types.ContainerListOptions{Filters: labels})
 	if err != nil {
-		return _, err
+		return nil, err
 	}
 	log.Debug("Containers: %v", containers)
 	return containers, nil
 }
 
-func stopContainer(labels filters.Args) (listContainersStopped, error) {
+func stopContainer(labels filters.Args) ([]types.Container, error) {
 	ctx := context.Background()
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation(), client.WithHost("unix:///tmp/docker.sock"))
 	if err != nil {
-		 return _, err
+		 return nil, err
 	}
 	containers, err := findContainerByLabel(labels)
 	if err != nil {
-		return _, err
+		return nil, err
 	}
 	for _, container := range containers {
 		if err := cli.ContainerStop(ctx, container.ID, nil); err != nil {
-			return _, err
+			return nil, err
 		}
 		log.Debug("Stopping container %v...", container.ID[:10])
 	}
-	return listContainersStopped, nil
+	return containers, nil
 }
 
 func main() {
