@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
@@ -16,8 +17,10 @@ import (
 )
 
 type config struct {
-	dockerHost  string
-	githubToken string
+	host               string
+	port               string
+	dockerHost         string
+	githubClientSecret string
 }
 
 func getEnv(key string, defaultVal string) string {
@@ -28,17 +31,19 @@ func getEnv(key string, defaultVal string) string {
 }
 func initConfig() *config {
 	return &config{
-		dockerHost:  getEnv("DOCKER_HOST", ""),
-		githubToken: getEnv("GITHUB_TOKEN", ""),
+		host:               getEnv("HOST", "0.0.0.0"),
+		port:               getEnv("PORT", "8080"),
+		dockerHost:         getEnv("DOCKER_HOST", "unix:///var/run/docker.sock"),
+		githubClientSecret: getEnv("GITHUB_CLIENT_SECRET", "123456"),
 	}
 }
 func init() {
 	if err := godotenv.Load(); err != nil {
-		log.Fatal("no .env file found")
+		log.Warn("no .env file found")
 	}
 }
 func handleWebhook(w http.ResponseWriter, r *http.Request) {
-	payload, err := github.ValidatePayload(r, []byte(""))
+	payload, err := github.ValidatePayload(r, []byte(initConfig().githubClientSecret))
 	if err != nil {
 		log.Error("error validating request body: err=%s\n", err)
 		return
@@ -53,7 +58,10 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
 	switch e := event.(type) {
 	case *github.PullRequestEvent:
 		if e.GetAction() == "closed" {
-			handlePullRequestClosedEvent(e)
+			err := handlePullRequestClosedEvent(e)
+			if err != nil {
+				log.Error("error handling pull request closed event: err=%s\n", err)
+			}
 		}
 	default:
 		log.Error("unknown event type %s\n", github.WebHookType(r))
@@ -61,10 +69,10 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func handlePullRequestClosedEvent(GithubEvent *github.PullRequestEvent) (error) {
+func handlePullRequestClosedEvent(GithubEvent *github.PullRequestEvent) error {
 	labels := filters.NewArgs(
-		filters.KeyValuePair{"projectName", replaceDotAndLowercase(GithubEvent.GetRepo().GetName())},
-		filters.KeyValuePair{"pullRequestNumber", strconv.Itoa(GithubEvent.GetPullRequest().GetNumber())},
+		filters.KeyValuePair{"label", fmt.Sprintf("projectName=%v", sanitize(GithubEvent.GetRepo().GetName()))},
+		filters.KeyValuePair{"label", fmt.Sprintf("pullRequestNumber=%v", strconv.Itoa(GithubEvent.GetPullRequest().GetNumber()))},
 	)
 	_, err := stopContainer(labels)
 	if err != nil {
@@ -73,18 +81,25 @@ func handlePullRequestClosedEvent(GithubEvent *github.PullRequestEvent) (error) 
 	return nil
 }
 
-func replaceDotAndLowercase(repoName string) string {
-	return strings.ToLower(strings.Replace(repoName, ".", "_", -1))
+func sanitize(repoName string) string {
+	replacer := strings.NewReplacer(",", "!", "?", "/", "-", "")
+	return strings.ToLower(replacer.Replace(repoName))
 }
 
-func createPullRequestComment(GithubEvent *github.PullRequestEvent) (error) {
+func createPullRequestComment(GithubEvent *github.PullRequestEvent) error {
+
+	//issueComment, _, err = githubClient.Issues.CreateComment(context.Background(), *owner, *repo, num, issueComment)
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
 	// comment := "The container linked to this pull request has been stopped (" + GithubEvent.GetPullRequest().GetHTMLURL() + ")."
+	log.Info("Creating comment...")
 	return nil
 }
 
-func findContainerByLabel(labels filters.Args) ([]types.Container, error) { 
+func findContainerByLabel(labels filters.Args) ([]types.Container, error) {
 	ctx := context.Background()
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation(), client.WithHost("unix:///tmp/docker.sock"))
+	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation(), client.WithHost(initConfig().dockerHost))
 	if err != nil {
 		return nil, err
 	}
@@ -92,15 +107,14 @@ func findContainerByLabel(labels filters.Args) ([]types.Container, error) {
 	if err != nil {
 		return nil, err
 	}
-	log.Debug("Containers: %v", containers)
 	return containers, nil
 }
 
 func stopContainer(labels filters.Args) ([]types.Container, error) {
 	ctx := context.Background()
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation(), client.WithHost("unix:///tmp/docker.sock"))
+	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation(), client.WithHost(initConfig().dockerHost))
 	if err != nil {
-		 return nil, err
+		return nil, err
 	}
 	containers, err := findContainerByLabel(labels)
 	if err != nil {
@@ -110,13 +124,13 @@ func stopContainer(labels filters.Args) ([]types.Container, error) {
 		if err := cli.ContainerStop(ctx, container.ID, nil); err != nil {
 			return nil, err
 		}
-		log.Debug("Stopping container %v...", container.ID[:10])
+		log.Infof("stopping container %v (%v)...", container.Names[0], container.ID[:10])
 	}
 	return containers, nil
 }
 
 func main() {
-	log.Debug("Server started..")
+	log.Infof("server started on port %v:%v..", initConfig().host, initConfig().port)
 	http.HandleFunc("/webhook", handleWebhook)
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	log.Fatal(http.ListenAndServe(fmt.Sprintf("%v:%v", initConfig().host, initConfig().port), nil))
 }
