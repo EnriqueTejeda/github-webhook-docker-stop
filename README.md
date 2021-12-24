@@ -7,8 +7,6 @@
 
 A solution for interact with docker api local with a simple web server for listen events from github webhook 
 
-Visit also [docker hub repository](https://hub.docker.com/repository/docker/etejeda/crawler-http-checker).
-
 ## How works?
 
 The golang app interact with the docker api for search and stop the containers with a specific label (`projectName` & `pullRequestNumber`).
