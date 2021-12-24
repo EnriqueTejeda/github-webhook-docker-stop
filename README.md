@@ -58,7 +58,7 @@ make build-docker
 | HOST | The address for init the webhook webserver  | `0.0.0.0` | *no* |
 | PORT | The port for the webserver | `8080` | *no* |
 | DOCKER_HOST | The docker api endpoint | `unix:///var/run/docker.sock` | *no* |
-| GITHUB_CLIENT_SECRET | If you configure a secret for the webhook put here | `` | *no* |
+| GITHUB_CLIENT_SECRET | If you configure a secret for the webhook put here | `123456` | *no* |
 
 ## How contribute? :rocket:
 
