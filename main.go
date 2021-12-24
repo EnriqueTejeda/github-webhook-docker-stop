@@ -86,17 +86,6 @@ func sanitize(repoName string) string {
 	return strings.ToLower(replacer.Replace(repoName))
 }
 
-func createPullRequestComment(GithubEvent *github.PullRequestEvent) error {
-
-	//issueComment, _, err = githubClient.Issues.CreateComment(context.Background(), *owner, *repo, num, issueComment)
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-	// comment := "The container linked to this pull request has been stopped (" + GithubEvent.GetPullRequest().GetHTMLURL() + ")."
-	log.Info("Creating comment...")
-	return nil
-}
-
 func findContainerByLabel(labels filters.Args) ([]types.Container, error) {
 	ctx := context.Background()
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation(), client.WithHost(initConfig().dockerHost))
