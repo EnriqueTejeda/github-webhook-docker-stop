@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -58,6 +59,7 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
 	switch e := event.(type) {
 	case *github.PullRequestEvent:
 		if e.GetAction() == "closed" {
+			log.Infof("pull request #%v (%v) closed, stopping container", e.GetPullRequest().GetNumber(), e.GetRepo().GetName())
 			err := handlePullRequestClosedEvent(e)
 			if err != nil {
 				log.Error("error handling pull request closed event: err=%s\n", err)
@@ -82,8 +84,11 @@ func handlePullRequestClosedEvent(GithubEvent *github.PullRequestEvent) error {
 }
 
 func sanitize(repoName string) string {
-	replacer := strings.NewReplacer(".", "!", "?", "/", "-", "")
-	return strings.ToLower(replacer.Replace(repoName))
+	reg, err := regexp.Compile("[^a-zA-Z0-9]+")
+	if err != nil {
+		log.Fatal(err)
+	}
+	return strings.ToLower(reg.ReplaceAllString(repoName, ""))
 }
 
 func findContainerByLabel(labels filters.Args) ([]types.Container, error) {
@@ -92,6 +97,7 @@ func findContainerByLabel(labels filters.Args) ([]types.Container, error) {
 	if err != nil {
 		return nil, err
 	}
+	log.Infof("finding container by label: %v\n", labels)
 	containers, err := cli.ContainerList(ctx, types.ContainerListOptions{Filters: labels})
 	if err != nil {
 		return nil, err
