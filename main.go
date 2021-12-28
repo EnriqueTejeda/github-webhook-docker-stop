@@ -82,7 +82,7 @@ func handlePullRequestClosedEvent(GithubEvent *github.PullRequestEvent) error {
 }
 
 func sanitize(repoName string) string {
-	replacer := strings.NewReplacer(",", "!", "?", "/", "-", "")
+	replacer := strings.NewReplacer(".", "!", "?", "/", "-", "")
 	return strings.ToLower(replacer.Replace(repoName))
 }
 
